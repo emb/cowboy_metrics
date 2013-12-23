@@ -1,0 +1,27 @@
+* Getting shit done.
+
+Thank you for looking into this list.
+
+** Definitions:
+
+*VERB*: GET, PUT, POST, DELETE, PATCH, OPTIONS
+*STATUS*: Response status such as 404, 200, 501 etc.
+
+** TODO define a high level metrics that neeed to be collected.
+*** TODO total requests per unit of time
+*** TODO total responses pre unit of time
+*** TODO number of VERB requests per unif of time
+*** TODO number of VERB responses per unit of time
+*** TODO total bytes received per unit of time
+*** TODO total bytes sent pert unit of time
+*** TODO number of bytes received per VERB per unit of time
+*** TODO number of bytes sent per VERB per unit of time
+*** TODO number of responses per STATUS per unit of time
+*** TODO number of active handlers
+
+
+** TODO backend support
+*** TODO SNMPv2
+*** TODO SNMPv3
+*** TODO folsom
+*** TODO PCP
