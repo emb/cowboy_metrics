@@ -1,0 +1,8 @@
+# Erlang generated files
+
+*.beam
+ebin/
+
+# Compiled MIBs
+
+priv/mibs/*.bin
