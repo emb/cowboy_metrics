@@ -1,8 +1,16 @@
 # Erlang generated files
-
 *.beam
 ebin/
+*_crash.dump
 
 # Compiled MIBs
-
 priv/mibs/*.bin
+
+# Logs
+logs/
+
+# Deps
+deps/
+
+# erlang.mk package file
+.erlang.mk.packages.v1

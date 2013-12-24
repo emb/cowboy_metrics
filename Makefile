@@ -1,6 +1,15 @@
 PROJECT = cowboy_metrics
 
+CT_SUITES = request_counter
+TEST_DEPS = cowboy ibrowse
+dep_cowboy = pkg://cowboy 0.9.0
+dep_ibrowse = https://github.com/cmullaparthi/ibrowse.git v4.0.2
+
+## Override the default target
+
 default: mibs all
+
+## Include standard targets
 
 include erlang.mk
 

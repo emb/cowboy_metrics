@@ -221,8 +221,8 @@ CT_RUN = ct_run \
 	-noshell \
 	-pa $(realpath ebin) $(DEPS_DIR)/*/ebin \
 	-dir test \
-	-logdir logs
-#	-cover test/cover.spec
+	-logdir logs \
+	-cover test/cover.spec
 
 CT_SUITES ?=
 
