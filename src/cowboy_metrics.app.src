@@ -1,11 +1,14 @@
+%%-*- mode: erlang -*-
 {application, cowboy_metrics,
  [
-  {description, ""},
-  {vsn, "1"},
+  {description, "Provide mechansim to collect cowboy metrics"},
+  {vsn, "0.0.1"},
   {registered, []},
+  {modules, []},
   {applications, [
                   kernel,
-                  stdlib
+                  stdlib,
+		  snmp
                  ]},
   {mod, { cowboy_metrics_app, []}},
   {env, []}
