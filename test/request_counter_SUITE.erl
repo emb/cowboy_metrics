@@ -108,7 +108,7 @@ uri(Config) ->
 
 check_snmp_counter(_Config) ->
     {ok, SnmpReply, _} = snmpm:sync_get(cowgirl, "cowboy agent",
-			   [?cowboyTotalRequests_instance]),
+			   [?totalRequests_instance]),
 
     ct:pal("snmp reply: ~p", [SnmpReply]),
     

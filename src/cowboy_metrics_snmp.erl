@@ -24,35 +24,150 @@
 %% (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 %% OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-%% @doc SNMP related functions
+%% @doc Cowboy mib implementation
 -module(cowboy_metrics_snmp).
+-behaviour(gen_server).
 
-%% Potential Backend callbacks
--export([init/0, terminate/0]).
--export([increment_request/1]).
+-include("COWBOY-MIB.hrl").
 
-%% @doc Load cowboy mibs.
--spec init() -> ok | {error, term()}.
-init() ->
-    load_mibs().
+%% gen_server callbacks.
+-export([init/1, terminate/2]).
+-export([handle_call/3, handle_cast/2, handle_info/2]).
+-export([code_change/3]).
+
+%% API
+-export([start_link/0]).
+-export([load/0,   load/1]).
+-export([unload/0, unload/1]).
+-export([notify_requst/1]).
+
+%% SNMP Accessors
+-export([total_requests/1]).
+-export([request_table/1, request_table/3]).
+
+-define(SERVER, cowboy_metrics_server).
+-define(MIB, "COWBOY-MIB").
+-define(DB, {requestTable, volatile}).
+
+-record(state, {
+          counters :: orddict:orddict()
+         }).
 
 
-%% @doc Unload cowboy mibs.
--spec terminate() -> ok | {error, term()}.
-terminate() ->
-    unload_mibs().
+-spec start_link() -> {ok, pid()} | ignore | {error, term()}.
+start_link() ->
+    gen_server:start_link({local, ?SERVER}, ?MODULE, [], []).
 
 
-%% @doc Increment incoming cowboy requests
--spec increment_request(binary()) -> ok.
-increment_request(_Method) ->
-    snmp_generic:variable_inc({cowboyTotalRequests, volatile}, 1).
+%% @doc load mibs to the default master agent.
+-spec load() -> ok | {error, term()}.
+load() ->
+    load(snmp_master_agent).
 
 
-load_mibs() ->
-    MIB = code:priv_dir(cowboy_metrics) ++ "/mibs/COWBOY-MIB",
-    snmpa:load_mib(MIB).
+-spec load(pid() | atom()) -> ok | {error, term()}.
+load(Agent) ->
+    Path = [code:priv_dir(cowboy_metrics), "mibs", ?MIB],
+    snmpa:load_mib(Agent, filename:join(Path)).
 
 
-unload_mibs() ->
-    snmpa:unload_mib("COWBOY-MIB").
+%% @doc unload mib from the default agent.
+-spec unload() -> ok | {error, term()}.
+unload() ->
+    unload(snmp_master_agent).
+
+
+-spec unload(pid() | atom()) -> ok | {error, term()}.
+unload(Agent) ->
+    snmpa:unload_mib(Agent, ?MIB).
+
+
+-spec notify_requst(string() | binary()) -> ok.
+notify_requst(Method) ->
+    gen_server:cast(?SERVER, {request, Method}).
+
+
+total_requests(get) ->
+    gen_server:call(?SERVER, get_request_rate);
+total_requests(_) ->
+    ok.
+
+
+%% Pass through operations unchanged. We are going to use the default
+%% agent storage options.
+request_table(Op) ->
+    snmp_generic:table_func(Op, ?DB).
+
+
+request_table(Op, RowIndex, Cols) ->
+    snmp_generic:table_func(Op, RowIndex, Cols, ?DB).
+
+
+%% gen_server callbacks
+
+init(_Opts) ->
+    case load() of
+        ok ->
+            create_rows(methods()),
+            Counters = orddict:from_list(methods()),
+            {ok, #state{counters = Counters}};
+        Error ->
+            {stop, Error}
+    end.
+
+
+handle_call(get_request_rate, _From, State = #state{counters = Counters}) ->
+    Value = orddict:fold(fun (_, V, Acc) -> V + Acc end, 0, Counters),
+    {reply, {value, Value}, State};
+handle_call(_Request, _From, State) ->
+    error_logger:warning_msg("unknown request: ~p from: ~p", [_Request, _From]),
+    {noreply, State}.
+
+handle_cast({request, Method}, State) when is_binary(Method) ->
+    handle_cast({request, binary_to_list(Method)}, State);
+handle_cast({request, Method}, State = #state{counters = Counters}) ->
+    NewCounters = orddict:update_counter(Method, 1, Counters),
+    Value = orddict:fetch(Method, NewCounters),
+    snmp_generic:table_set_element(?DB, index(Method), ?requestMethodCount,
+                                   Value),
+    {noreply, State#state{counters = NewCounters}};
+handle_cast(_Message, State) ->
+    error_logger:warning_msg("unknown message: ~p", [_Message]),
+    {noreply, State}.
+
+
+handle_info(_Message, State) ->
+    error_logger:warning_msg("unknown message: ~p", [_Message]),
+    {noreply, State}.
+
+
+terminate(_Reason, _State) ->
+    unload(),
+    ok.
+
+
+code_change(_OldVsn, State, _Extra) ->
+    {ok, State}.
+
+
+%% helpers
+
+methods() ->
+    [{"GET", 0},
+     {"HEAD", 0},
+     {"POST", 0},
+     {"PUT", 0},
+     {"PATCH", 0},
+     {"DELETE", 0},
+     {"OPTIONS", 0}].
+
+
+create_rows([{Method, Count} | Tail]) ->
+    true = snmpa_mib_lib:table_cre_row(?DB, index(Method), {Method, Count}),
+    create_rows(Tail);
+create_rows([]) ->
+    ok.
+
+%% String indexes should have length as prefix, se rfc2578 7.7
+index(Method) ->
+    [length(Method) | Method].

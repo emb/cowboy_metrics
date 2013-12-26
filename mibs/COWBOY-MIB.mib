@@ -30,6 +30,8 @@ IMPORTS
     MODULE-IDENTITY, OBJECT-TYPE,
     Counter32
         FROM SNMPv2-SMI
+    DisplayString
+        FROM SNMPv2-TC
     MODULE-COMPLIANCE, OBJECT-GROUP
         FROM SNMPv2-CONF
     otpModules, otpApplications
@@ -50,19 +52,63 @@ otpModule MODULE-IDENTITY
 
     ::= { otpModules 100 } -- Picked a value of my hat.
 
+-- Deine the general structure of the OID.
+
 cowboyMIB        OBJECT IDENTIFIER ::= { otpApplications 100 } -- Picked another value :-)
 cowboyMIBConformance
                  OBJECT IDENTIFIER ::= { cowboyMIB 1 }
 cowboyMIBObjects OBJECT IDENTIFIER ::= { cowboyMIB 2 }
 
-cowboyTotalRequests OBJECT-TYPE
-    SYNTAX      Counter32   -- Is this enough? Or should we upgrade to Counter64?
+-- Here we may have request/responses etc, we might as well split them.
+request          OBJECT IDENTIFIER ::= { cowboyMIBObjects 1}
+
+totalRequests OBJECT-TYPE
+    SYNTAX      Counter32
     MAX-ACCESS  read-only
     STATUS      current
     DESCRIPTION
-        "Display the total number of http requests received."
-    ::= { cowboyMIBObjects 1 }
+        "Total number of incoming requests."
+    ::= { request 1 }
 
+requestTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF RequestEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "Describe requests in table for each http method"
+    ::= { request 2 }
+
+requestEntry OBJECT-TYPE
+    SYNTAX      RequestEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "A row showing each http method stats."
+    INDEX       { requestMethod }
+    ::= { requestTable 1 }
+
+RequestEntry ::= SEQUENCE {
+    requestMethod      DisplayString,
+    requestMethodCount Counter32
+}
+
+requestMethod OBJECT-TYPE
+    SYNTAX      DisplayString
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "HTTP Method, e.g. GET, POST.. etc"
+    ::= { requestEntry 1 }
+
+requestMethodCount OBJECT-TYPE
+    SYNTAX     Counter32
+    MAX-ACCESS read-only
+    STATUS     current
+    DESCRIPTION
+        "The total number of requests  associated with HTTP
+        Method"
+    DEFVAL     { 0 }
+    ::= { requestEntry 2 }
 
 -- Required Compliance Group
 
@@ -79,7 +125,8 @@ cowboyBasicCompilance MODULE-COMPLIANCE
     ::= { cowboyMIBCompliances 1 }
 
 cowboyGroup OBJECT-GROUP
-    OBJECTS { cowboyTotalRequests
+    OBJECTS { totalRequests,
+              requestMethodCount
             }
     STATUS    current
     DESCRIPTION

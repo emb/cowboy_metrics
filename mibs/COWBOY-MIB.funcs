@@ -1,0 +1,4 @@
+%% -*- mode: erlang -*-
+
+{totalRequests, {cowboy_metrics_snmp, total_requests, []}}.
+{requestTable, {cowboy_metrics_snmp, request_table, []}}.

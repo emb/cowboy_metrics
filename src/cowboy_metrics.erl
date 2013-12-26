@@ -34,5 +34,5 @@
 -spec on_request(cowboy_req:req()) -> cowboy_req:req().
 on_request(Req) ->
     {Method, Req1} = cowboy_req:method(Req),
-    cowboy_metrics_server:incr_request(Method),
+    gen_server:cast(cowboy_metrics_server, {request, Method}),
     Req1.
