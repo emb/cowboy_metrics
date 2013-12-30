@@ -1,5 +1,6 @@
 PROJECT = cowboy_metrics
 
+CT_OPTS = -cover test/cover.spec
 CT_SUITES = request_counter
 TEST_DEPS = cowboy ibrowse
 dep_cowboy = pkg://cowboy 0.9.0
