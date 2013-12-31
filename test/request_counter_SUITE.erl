@@ -1,66 +1,40 @@
 -module(request_counter_SUITE).
 
 -include_lib("common_test/include/ct.hrl").
+-include_lib("proper/include/proper.hrl").
+
 -include_lib("snmp/include/snmp_types.hrl").
 -include_lib("../include/COWBOY-MIB.hrl").
 
--export([
-         all/0,
-	 groups/0,
-         init_per_suite/1,  end_per_suite/1
-        ]).
+%% ct callbacks
+-export([suite/0, all/0, groups/0]).
+-export([init_per_suite/1, end_per_suite/1]).
+-export([init_per_group/2, end_per_group/2]).
 
-
+%% tests
 -export([
-	 send_success_request/1,
-	 send_404_request/1,
-	 check_snmp_counter/1
+         request_counter_test/1
 	]).
 
--define(NUM_REQUESTS, 20).
+
+suite() ->
+    %% require certain configuration for snmp tests.
+    [{require, snmp_mgr_agent, snmp}].
+
 
 all() ->
     [
-     %% FIXME: Find a better way to send parallel requests.
-     %% sending requests is not really a test it is the counter that matters.
-     {group, send_requests},
-     check_snmp_counter
+     {group, snmp}
     ].
 
 
 groups() ->
     [
-     {send_requests,
-      [parallel, {repeat, ?NUM_REQUESTS/2}],
-      [send_success_request, send_404_request]}
+     {snmp, [], [request_counter_test]}
     ].
 
 
-setup_db_dir(Type, Config) ->
-    PrivDir = ?config(priv_dir, Config),
-    DbDir = PrivDir ++ Type ++ "/db/",
-    ok = filelib:ensure_dir(DbDir),
-    DbDir.
-
-
-setup_snmp_app(Config) ->
-    DataDir = ?config(data_dir, Config),
-    Agent = [{config, [{dir, DataDir ++ "snmp/agent/conf/"}]},
-             {db_dir, setup_db_dir("agent", Config)}],
-    Manager = [{priority, normal},
-               {versions, [v2]},
-               {config, [{dir, DataDir ++ "/snmp/manager/conf/"},
-                         {db_dir, setup_db_dir("manager", Config)}]},
-               {mibs, []}
-              ],
-
-    application:stop(snmp),
-    application:set_env(snmp, agent, Agent),
-    application:set_env(snmp, manager, Manager),
-    {application:start(snmp), Config}.
-
-
-setup_cowboy_app(Config) ->
+start_cowboy_app(Config) ->
     {ok, _} = application:ensure_all_started(cowboy),
     Dispatch = cowboy_router:compile([
 				      {'_', [
@@ -77,28 +51,30 @@ setup_cowboy_app(Config) ->
 
 
 init_per_suite(Config) ->
-    {ok, Config1} = setup_snmp_app(Config),
-    {ok, Config2} = setup_cowboy_app(Config1),
-    ok = application:ensure_started(cowboy_metrics),
+    {ok, Config2} = start_cowboy_app(Config),
     ok = application:ensure_started(ibrowse),
     Config2.
 
 
 end_per_suite(Config) ->
     application:stop(ibrowse),
-    application:stop(cowboy_metrics),
     application:stop(cowoby),
-    application:stop(snmp),
     Config.
 
 
-send_success_request(Config) ->
-    {ok, "200", _, "TEST HANDLER"} = ibrowse:send_req(uri(Config), [], get).
+init_per_group(snmp, Config) ->
+    %% Start a convinient snmp manager and agent.
+    ok = ct_snmp:start(Config, snmp_mgr_agent),
+    {ok, _} = application:ensure_all_started(cowboy_metrics),
+    
+    [{count_getter, fun snmp_count_getter/1} | Config].
 
 
-send_404_request(Config) ->
-    Uri = uri(Config) ++ "non-exsisting-path",
-    {ok, "404", _, _} = ibrowse:send_req(Uri, [], get).
+end_per_group(snmp, Config) ->
+    application:stop(cowboy_metrics),
+    application:stop(snmp),
+    
+    Config.
 
 
 uri(Config) ->
@@ -106,14 +82,52 @@ uri(Config) ->
     lists:flatten(io_lib:format("http://localhost:~p/", [Port])).
 
 
-check_snmp_counter(_Config) ->
-    {ok, SnmpReply, _} = snmpm:sync_get(cowgirl, "cowboy agent",
-			   [?totalRequests_instance]),
+snmp_get_counter(OID) ->
+    {noError, 0, [Var]} = ct_snmp:get_values(cowboy_mib_test, [OID],
+                                             snmp_mgr_agent),
 
-    ct:pal("snmp reply: ~p", [SnmpReply]),
-    
-    {noError, _, [Variable]} = SnmpReply,
-    20 = Variable#varbind.value.
+    #varbind{oid = OID, variabletype = 'Counter32', value = Value} = Var,
 
-	
+    Value.
 
+
+method(Method) when is_atom(Method) ->
+    string:to_upper(atom_to_list(Method)).
+
+
+snmp_count_getter(Method) when is_atom(Method) ->
+    snmp_count_getter(method(Method));
+snmp_count_getter("TOTAL") ->
+    snmp_get_counter(?totalRequests_instance);
+snmp_count_getter(Method) ->
+    OID = ?requestEntry ++ [?requestMethodCount] ++ [length(Method) | Method],
+    snmp_get_counter(OID).
+
+
+methods() ->
+    [get, head, post, put, patch, delete, options].
+
+
+request_counter_test(Config) ->
+    true = proper:quickcheck(prop_generate_requests(Config)),
+    %% quickcheck does a 100 by default.
+    Getter = ?config(count_getter, Config),
+    100 = Getter("TOTAL").
+
+
+prop_generate_requests(Config) ->
+    Getter = ?config(count_getter, Config),
+    ?FORALL({Method, Path}, 
+            {oneof(methods()), oneof(["", "non-exisiting-path"])}, 
+            begin
+                ct:pal("Sending requst, method: ~p path: ~p~n", [Method, Path]),
+                Count = Getter(Method),
+                Uri = uri(Config) ++ Path,
+                {ok, _, _, _} = ibrowse:send_req(Uri, [], Method),
+                NewCount = Getter(Method),
+
+                ?WHENFAIL(
+                   ct:pal(error, "did not increment counter, old: ~p new: ~p",
+                          [Count, NewCount]),
+                   NewCount =:= Count + 1)
+            end).
