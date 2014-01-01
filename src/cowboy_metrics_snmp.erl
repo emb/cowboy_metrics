@@ -50,7 +50,7 @@
 -define(DB, {requestTable, volatile}).
 
 -record(state, {
-          counters :: orddict:orddict()
+          total_requests :: non_neg_integer()
          }).
 
 
@@ -88,7 +88,7 @@ notify_requst(Method) ->
 
 
 total_requests(get) ->
-    gen_server:call(?SERVER, get_request_rate);
+    gen_server:call(?SERVER, get_total_requests);
 total_requests(_) ->
     ok.
 
@@ -109,28 +109,37 @@ init(_Opts) ->
     case load() of
         ok ->
             create_rows(methods()),
-            Counters = orddict:from_list(methods()),
-            {ok, #state{counters = Counters}};
+            {ok, #state{total_requests = 0}};
+        {error,already_loaded} ->
+            %% Update the total counter
+            Fun = fun (_, {_, Count}) ->
+                          gen_server:cast(self(), {increment_total, Count})
+                  end,
+            snmp_generic:table_foreach(?DB, Fun),
+            {ok, #state{total_requests = 10}};
         Error ->
             {stop, Error}
     end.
 
 
-handle_call(get_request_rate, _From, State = #state{counters = Counters}) ->
-    Value = orddict:fold(fun (_, V, Acc) -> V + Acc end, 0, Counters),
-    {reply, {value, Value}, State};
+handle_call(get_total_requests, _From, State = #state{total_requests = Total}) ->
+    {reply, {value, Total}, State};
 handle_call(_Request, _From, State) ->
     error_logger:warning_msg("unknown request: ~p from: ~p", [_Request, _From]),
     {noreply, State}.
 
+
+handle_cast({increment_total, By}, State = #state{total_requests = Total}) ->
+    {noreply, State#state{total_requests = counter32_inc(Total, By)}};
 handle_cast({request, Method}, State) when is_binary(Method) ->
     handle_cast({request, binary_to_list(Method)}, State);
-handle_cast({request, Method}, State = #state{counters = Counters}) ->
-    NewCounters = orddict:update_counter(Method, 1, Counters),
-    Value = orddict:fetch(Method, NewCounters),
-    snmp_generic:table_set_element(?DB, index(Method), ?requestMethodCount,
-                                   Value),
-    {noreply, State#state{counters = NewCounters}};
+handle_cast({request, Method}, State = #state{total_requests = Total}) ->
+    RowIndex = row_index(Method),
+    {value, Count} = snmp_generic:table_get_element(?DB, RowIndex,
+                                                    ?requestMethodCount),
+    snmp_generic:table_set_element(?DB, RowIndex, ?requestMethodCount,
+                                   counter32_inc(Count)),
+    {noreply, State#state{total_requests = counter32_inc(Total)}};
 handle_cast(_Message, State) ->
     error_logger:warning_msg("unknown message: ~p", [_Message]),
     {noreply, State}.
@@ -163,11 +172,20 @@ methods() ->
 
 
 create_rows([{Method, Count} | Tail]) ->
-    true = snmpa_mib_lib:table_cre_row(?DB, index(Method), {Method, Count}),
+    true = snmpa_mib_lib:table_cre_row(?DB, row_index(Method), {Method, Count}),
     create_rows(Tail);
 create_rows([]) ->
     ok.
 
+
 %% String indexes should have length as prefix, se rfc2578 7.7
-index(Method) ->
+row_index(Method) ->
     [length(Method) | Method].
+
+
+counter32_inc(Value) ->
+    counter32_inc(Value, 1).
+
+
+counter32_inc(Value, By) ->
+    (Value + By) rem 4294967296.
