@@ -116,7 +116,7 @@ init(_Opts) ->
                           gen_server:cast(self(), {increment_total, Count})
                   end,
             snmp_generic:table_foreach(?DB, Fun),
-            {ok, #state{total_requests = 10}};
+            {ok, #state{total_requests = 0}};
         Error ->
             {stop, Error}
     end.
