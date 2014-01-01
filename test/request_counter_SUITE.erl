@@ -19,7 +19,10 @@
 
 suite() ->
     %% require certain configuration for snmp tests.
-    [{require, snmp_mgr_agent, snmp}].
+    [
+     {require, snmp_mgr_agent, snmp},
+     {require, snmp_app, snmp_app}
+    ].
 
 
 all() ->
@@ -64,7 +67,7 @@ end_per_suite(Config) ->
 
 init_per_group(snmp, Config) ->
     %% Start a convinient snmp manager and agent.
-    ok = ct_snmp:start(Config, snmp_mgr_agent),
+    ok = ct_snmp:start(Config, snmp_mgr_agent, snmp_app),
     {ok, _} = application:ensure_all_started(cowboy_metrics),
     
     [{count_getter, fun snmp_count_getter/1} | Config].
@@ -72,7 +75,7 @@ init_per_group(snmp, Config) ->
 
 end_per_group(snmp, Config) ->
     application:stop(cowboy_metrics),
-    application:stop(snmp),
+    ct_snmp:stop(Config),
     
     Config.
 
@@ -120,7 +123,6 @@ prop_generate_requests(Config) ->
     ?FORALL({Method, Path}, 
             {oneof(methods()), oneof(["", "non-exisiting-path"])}, 
             begin
-                ct:pal("Sending requst, method: ~p path: ~p~n", [Method, Path]),
                 Count = Getter(Method),
                 Uri = uri(Config) ++ Path,
                 {ok, _, _, _} = ibrowse:send_req(Uri, [], Method),
