@@ -40,14 +40,18 @@
 -export([load/0,   load/1]).
 -export([unload/0, unload/1]).
 -export([notify_requst/1]).
+-export([notify_response/2]).
 
 %% SNMP Accessors
 -export([total_requests/1]).
--export([request_table/1, request_table/3]).
+-export([total_responses/1, total_response_size/1]).
+-export([table/2, table/4]).
+
 
 -define(SERVER, cowboy_metrics_server).
 -define(MIB, "COWBOY-MIB").
--define(DB, {requestTable, volatile}).
+-define(REQ_DB, {requestTable, volatile}).
+-define(RESP_DB, {responseTable, volatile}).
 
 -record(state, {
          }).
@@ -86,20 +90,37 @@ notify_requst(Method) ->
     gen_server:cast(?SERVER, {request, Method}).
 
 
+-spec notify_response(non_neg_integer() | binary(), non_neg_integer()) -> ok.
+notify_response(Code, Size) ->
+    gen_server:cast(?SERVER, {response, Code, Size}).
+
+
 total_requests(get) ->
     gen_server:call(?SERVER, get_total_requests);
 total_requests(_) ->
     ok.
 
 
+total_responses(get) ->
+    gen_server:call(?SERVER, get_total_responses);
+total_responses(_) ->
+    ok.
+
+
+total_response_size(get) ->
+    gen_server:call(?SERVER, get_total_response_size);
+total_response_size(_) ->
+    ok.
+
+
 %% Pass through operations unchanged. We are going to use the default
 %% agent storage options.
-request_table(Op) ->
-    snmp_generic:table_func(Op, ?DB).
+table(Op, DB) ->
+    snmp_generic:table_func(Op, DB).
 
 
-request_table(Op, RowIndex, Cols) ->
-    snmp_generic:table_func(Op, RowIndex, Cols, ?DB).
+table(Op, RowIndex, Cols, DB) ->
+    snmp_generic:table_func(Op, RowIndex, Cols, DB).
 
 
 %% gen_server callbacks
@@ -107,7 +128,8 @@ request_table(Op, RowIndex, Cols) ->
 init(_Opts) ->
     case load() of
         ok ->
-            create_rows(methods()),
+            create_rows(?REQ_DB, methods()),
+            create_rows(?RESP_DB, code_classes()),
             {ok, #state{}};
         {error,already_loaded} ->
             {ok, #state{}};
@@ -120,6 +142,18 @@ handle_call(get_total_requests, _From, State) ->
     Fun = fun (_OID, {_Method, Count}, Acc) -> counter32_inc(Acc, Count) end,
     Total = table_fold(?REQ_DB, Fun, 0),
     {reply, {value, Total}, State};
+handle_call(get_total_responses, _From, State) ->
+    Fun = fun (_OID, {_Code, Count, _Size}, Acc) ->
+                  counter32_inc(Acc, Count)
+          end,
+    Total = table_fold(?RESP_DB, Fun, 0),
+    {reply, {value, Total}, State};
+handle_call(get_total_response_size, _From, State) ->
+    Fun = fun (_OID, {_Code, _Count, Size}, Acc) ->
+                  counter32_inc(Acc, Size)
+          end,
+    Total = table_fold(?RESP_DB, Fun, 0),
+    {reply, {value, Total}, State};
 handle_call(_Request, _From, State) ->
     error_logger:warning_msg("unknown request: ~p from: ~p", [_Request, _From]),
     {noreply, State}.
@@ -129,10 +163,21 @@ handle_cast({request, Method}, State) when is_binary(Method) ->
     handle_cast({request, binary_to_list(Method)}, State);
 handle_cast({request, Method}, State) ->
     RowIndex = row_index(Method),
-    {value, Count} = snmp_generic:table_get_element(?DB, RowIndex,
+    {value, Count} = snmp_generic:table_get_element(?REQ_DB, RowIndex,
                                                     ?requestMethodCount),
-    snmp_generic:table_set_element(?DB, RowIndex, ?requestMethodCount,
+    snmp_generic:table_set_element(?REQ_DB, RowIndex, ?requestMethodCount,
                                    counter32_inc(Count)),
+    {noreply, State};
+handle_cast({response, Code, Size}, State) ->
+    Class = status_class(Code),
+    RowIndex = row_index(Class),
+    Cols = [?responseCodeCount, ?responseCodeSize],
+    [Count, OldSize] = snmp_generic:table_get_elements(?RESP_DB, RowIndex,
+                                                       Cols),
+
+    SetCols = [{?responseCodeCount, counter32_inc(Count)},
+               {?responseCodeSize, counter32_inc(OldSize, Size)}],
+    snmp_generic:table_set_elements(?RESP_DB, RowIndex, SetCols),
     {noreply, State};
 handle_cast(_Message, State) ->
     error_logger:warning_msg("unknown message: ~p", [_Message]),
@@ -165,10 +210,19 @@ methods() ->
      {"OPTIONS", 0}].
 
 
-create_rows([{Method, Count} | Tail]) ->
-    true = snmpa_mib_lib:table_cre_row(?DB, row_index(Method), {Method, Count}),
-    create_rows(Tail);
-create_rows([]) ->
+code_classes() ->
+    [{"1xx", 0, 0},
+     {"2xx", 0, 0},
+     {"3xx", 0, 0},
+     {"4xx", 0, 0},
+     {"5xx", 0, 0}].
+
+
+create_rows(DB, [Row | Tail]) ->
+    Key = element(1, Row),
+    true = snmpa_mib_lib:table_cre_row(DB, row_index(Key), Row),
+    create_rows(DB, Tail);
+create_rows(_, []) ->
     ok.
 
 
@@ -180,14 +234,20 @@ row_index(Method) ->
 counter32_inc(Value) ->
     counter32_inc(Value, 1).
 
-
 counter32_inc(Value, By) ->
     (Value + By) rem 4294967296.
 
 
+status_class(Status) when is_binary(Status) ->
+    status_class(binary_to_list(Status));
+status_class(Status) when is_integer(Status) ->
+    status_class(integer_to_list(Status));
+status_class([Class | _]) ->
+    [Class, $x, $x].
+
+
 %% TODO: This function belongs in snmpa_generic moudle. Should submit
-%% patch.
-%% Inspired by snmpa_generic:table_foreach
+%% patch? This is inspired by snmpa_generic:table_foreach.
 -spec table_fold(tuple(),
                  fun((OID::list(), Row::term(), AccIn) -> AccOut),
                  AccIn) -> AccOut when AccOut::term(), AccIn::term().

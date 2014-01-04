@@ -27,7 +27,7 @@
 %% @doc Entry module to this application.
 -module(cowboy_metrics).
 
--export([on_request/1]).
+-export([on_request/1, on_response/4]).
 
 %% @doc Use this function as the `cowboy:onrequest_fun()'. It will be
 %% used collect metrics for all cowboy incoming requests.
@@ -36,3 +36,18 @@ on_request(Req) ->
     {Method, Req1} = cowboy_req:method(Req),
     gen_server:cast(cowboy_metrics_server, {request, Method}),
     Req1.
+
+
+%% @doc Use this function as the `cowboy:onresponse_fun()'. Used for
+%% collecting response metrices.
+-spec on_response(cowboy:http_status(), cowboy:http_headers(),
+                  iodata(), cowboy_req:req()) -> cowboy_req:req().
+on_response(Status, Headers, _, Req) ->
+    Size = case lists:keyfind(<<"content-length">>, 1, Headers) of
+               false ->
+                   0;
+               {_, Value} ->
+                   list_to_integer(Value)
+           end,
+    gen_server:cast(cowboy_metrics_server, {response, Status, Size}),
+    Req.

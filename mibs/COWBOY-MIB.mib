@@ -61,6 +61,7 @@ cowboyMIBObjects OBJECT IDENTIFIER ::= { cowboyMIB 2 }
 
 -- Here we may have request/responses etc, we might as well split them.
 request          OBJECT IDENTIFIER ::= { cowboyMIBObjects 1}
+response         OBJECT IDENTIFIER ::= { cowboyMIBObjects 2}
 
 totalRequests OBJECT-TYPE
     SYNTAX      Counter32
@@ -101,14 +102,78 @@ requestMethod OBJECT-TYPE
     ::= { requestEntry 1 }
 
 requestMethodCount OBJECT-TYPE
-    SYNTAX     Counter32
-    MAX-ACCESS read-only
-    STATUS     current
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
     DESCRIPTION
         "The total number of requests  associated with HTTP
         Method"
     DEFVAL     { 0 }
     ::= { requestEntry 2 }
+
+totalResponses OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Total number of outgoing responses."
+    ::= { response 1 }
+
+totalResponseSize OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Total body size of outgoing responses."
+    ::= { response 2 }
+
+responseTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF ResponseEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "Describe responses entry table."
+    ::= { response 3 }
+
+responseEntry OBJECT-TYPE
+    SYNTAX      ResponseEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "A response row showing StatusCode and available stats."
+    INDEX       { responseCode }
+    ::= { responseTable 1 }
+
+ResponseEntry ::= SEQUENCE {
+    responseCode      DisplayString,
+    responseCodeCount Counter32,
+    responseCodeSize  Counter32
+}
+
+responseCode OBJECT-TYPE
+    SYNTAX      DisplayString
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "HTTP Response Status Code."
+    ::= { responseEntry 1 }
+
+responseCodeCount OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The number of responses corresponding to status code class."
+    ::= { responseEntry 2 }
+
+responseCodeSize OBJECT-TYPE
+    SYNTAX     Counter32
+    MAX-ACCESS read-only
+    STATUS     current
+    DESCRIPTION
+        "The response body size per status code class."
+    ::= { responseEntry 3 }
+
 
 -- Required Compliance Group
 
@@ -121,17 +186,30 @@ cowboyBasicCompilance MODULE-COMPLIANCE
     DESCRIPTION
         "Compliance statement for SNMPv2 entities."
     MODULE
-        MANDATORY-GROUPS { cowboyGroup }
+        MANDATORY-GROUPS { cowboyRequestGroup,
+                           cowboyResponseGroup
+                         }
     ::= { cowboyMIBCompliances 1 }
 
-cowboyGroup OBJECT-GROUP
+cowboyRequestGroup OBJECT-GROUP
     OBJECTS { totalRequests,
               requestMethodCount
             }
     STATUS    current
     DESCRIPTION
-        "Object providing instrumentation for Cowboy Web Server"
+        "Cowboy Request instrumentation group."
     ::= { cowboyMIBGroups 1}
+
+cowboyResponseGroup OBJECT-GROUP
+    OBJECTS { totalResponses,
+              totalResponseSize,
+              responseCodeCount,
+              responseCodeSize
+            }
+    STATUS    current
+    DESCRIPTION
+        "Cowboy Response instrumentatation group."
+    ::= { cowboyMIBGroups 2}
 
 
 END

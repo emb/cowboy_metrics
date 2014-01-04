@@ -1,18 +1,21 @@
 -module(test_handler).
 
--export([init/3]).
--export([content_types_provided/2, to_text/2]).
+-export([init/3, handle/2, terminate/3]).
 
 
-init(_Transport, _Req, _Opts) ->
-    {upgrade, protocol, cowboy_rest}.
+init(_Transport, Req, _Opts) ->
+    {ok, Req, undefined}.
 
 
-content_types_provided(Req, State) ->
-    {[
-      {<<"text/plain">>, to_text}
-     ], Req, State}.
+handle(Req, State) ->
+    {Code, Req1} = cowboy_req:qs_val(<<"code">>, Req, <<"204">>),
+    {Body, Req2} = cowboy_req:qs_val(<<"body">>, Req1, <<"">>),
+
+    Headers = [{<<"content-type">>, <<"text/plain">>}],
+    {ok, Req3} = cowboy_req:reply(binary_to_integer(Code), Headers , Body,
+                                  Req2),
+    {ok, Req3, State}.
 
 
-to_text(Req, State) ->
-    {<<"TEST HANDLER">>, Req, State}.
+terminate(_Reason, _Req, _State) ->
+    ok.
