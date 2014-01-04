@@ -50,7 +50,6 @@
 -define(DB, {requestTable, volatile}).
 
 -record(state, {
-          total_requests :: non_neg_integer()
          }).
 
 
@@ -109,37 +108,32 @@ init(_Opts) ->
     case load() of
         ok ->
             create_rows(methods()),
-            {ok, #state{total_requests = 0}};
+            {ok, #state{}};
         {error,already_loaded} ->
-            %% Update the total counter
-            Fun = fun (_, {_, Count}) ->
-                          gen_server:cast(self(), {increment_total, Count})
-                  end,
-            snmp_generic:table_foreach(?DB, Fun),
-            {ok, #state{total_requests = 0}};
+            {ok, #state{}};
         Error ->
             {stop, Error}
     end.
 
 
-handle_call(get_total_requests, _From, State = #state{total_requests = Total}) ->
+handle_call(get_total_requests, _From, State) ->
+    Fun = fun (_OID, {_Method, Count}, Acc) -> counter32_inc(Acc, Count) end,
+    Total = table_fold(?REQ_DB, Fun, 0),
     {reply, {value, Total}, State};
 handle_call(_Request, _From, State) ->
     error_logger:warning_msg("unknown request: ~p from: ~p", [_Request, _From]),
     {noreply, State}.
 
 
-handle_cast({increment_total, By}, State = #state{total_requests = Total}) ->
-    {noreply, State#state{total_requests = counter32_inc(Total, By)}};
 handle_cast({request, Method}, State) when is_binary(Method) ->
     handle_cast({request, binary_to_list(Method)}, State);
-handle_cast({request, Method}, State = #state{total_requests = Total}) ->
+handle_cast({request, Method}, State) ->
     RowIndex = row_index(Method),
     {value, Count} = snmp_generic:table_get_element(?DB, RowIndex,
                                                     ?requestMethodCount),
     snmp_generic:table_set_element(?DB, RowIndex, ?requestMethodCount,
                                    counter32_inc(Count)),
-    {noreply, State#state{total_requests = counter32_inc(Total)}};
+    {noreply, State};
 handle_cast(_Message, State) ->
     error_logger:warning_msg("unknown message: ~p", [_Message]),
     {noreply, State}.
@@ -189,3 +183,33 @@ counter32_inc(Value) ->
 
 counter32_inc(Value, By) ->
     (Value + By) rem 4294967296.
+
+
+%% TODO: This function belongs in snmpa_generic moudle. Should submit
+%% patch.
+%% Inspired by snmpa_generic:table_foreach
+-spec table_fold(tuple(),
+                 fun((OID::list(), Row::term(), AccIn) -> AccOut),
+                 AccIn) -> AccOut when AccOut::term(), AccIn::term().
+table_fold(Table, Fun, AccIn) ->
+    table_fold(Table, Fun, AccIn, undefined).
+
+table_fold(Table, Fun, AccIn, FOI) ->
+    table_fold(Table, Fun, AccIn, FOI, []).
+
+table_fold(Table, Fun, AccIn, FOI, OID) ->
+    case snmp_generic:table_next(Table, OID) of
+        endOfTable ->
+            AccIn;
+        OID ->
+            %% Not really next :-(
+            exit({cyclic_db_reference, OID});
+        NextOID ->
+            AccOut = case snmp_generic:table_get_row(Table, NextOID, FOI) of
+                         undefined ->
+                             AccIn;
+                         Row ->
+                             Fun(NextOID, Row, AccIn)
+                     end,
+            table_fold(Table, Fun, AccOut, FOI, NextOID)
+    end.

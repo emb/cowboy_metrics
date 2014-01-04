@@ -17,7 +17,7 @@
          request_counter_test/1,
 
          %% SNMP specific tests.
-         snmp_total_init_test/1
+         snmp_total_after_kill/1
 	]).
 
 
@@ -37,7 +37,7 @@ all() ->
 
 groups() ->
     [
-     {snmp, [], [request_counter_test, snmp_total_init_test]}
+     {snmp, [], [request_counter_test, snmp_total_after_kill]}
     ].
 
 
@@ -102,9 +102,7 @@ method(Method) when is_atom(Method) ->
     string:to_upper(atom_to_list(Method)).
 
 
-snmp_count_getter(Method) when is_atom(Method) ->
-    snmp_count_getter(method(Method));
-snmp_count_getter("TOTAL") ->
+snmp_count_getter(total_requests) ->
     get_snmp_counter(?totalRequests_instance);
 snmp_count_getter(Method) ->
     OID = ?requestEntry ++ [?requestMethodCount] ++ [length(Method) | Method],
@@ -119,7 +117,7 @@ request_counter_test(Config) ->
     true = proper:quickcheck(prop_generate_requests(Config)),
     %% quickcheck does a 100 by default.
     Getter = ?config(count_getter, Config),
-    100 = Getter("TOTAL").
+    100 = Getter(total_requests),
 
 
 prop_generate_requests(Config) ->
@@ -139,16 +137,14 @@ prop_generate_requests(Config) ->
             end).
 
 
-snmp_total_init_test(doc) ->
-    ["Ensure the total request counter gets initialized during an error"];
-snmp_total_init_test(_Config) ->
+snmp_total_after_kill(doc) ->
+    ["Ensure the total request counter are still valid afer gen_server kill"];
+snmp_total_after_kill(_Config) ->
     %% Kill the gen_server this should erace its state along with the
     %% total_request counter.
     exit(whereis(cowboy_metrics_server), kill),
 
-    %% Just wait a little for the process to be spawned.
-    ct:sleep({seconds, 2}),
-
-    %% Now query SNMP which should return a total of 100 from the previous test.
-    100 = snmp_count_getter("TOTAL").
+    %% Now query SNMP which should return a total of 100 from the
+    %% previous test.
+    100 = snmp_count_getter(total_requests).
     
