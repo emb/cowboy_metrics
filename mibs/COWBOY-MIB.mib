@@ -121,6 +121,7 @@ totalResponses OBJECT-TYPE
 
 totalResponseSize OBJECT-TYPE
     SYNTAX      Counter32
+    UNITS       "bytes"
     MAX-ACCESS  read-only
     STATUS      current
     DESCRIPTION
@@ -168,6 +169,7 @@ responseCodeCount OBJECT-TYPE
 
 responseCodeSize OBJECT-TYPE
     SYNTAX     Counter32
+    UNITS      "bytes"
     MAX-ACCESS read-only
     STATUS     current
     DESCRIPTION
