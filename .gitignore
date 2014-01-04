@@ -5,6 +5,7 @@ ebin/
 
 # Compiled MIBs
 priv/mibs/*.bin
+include/COWBOY-MIB.hrl
 
 # Logs
 logs/
