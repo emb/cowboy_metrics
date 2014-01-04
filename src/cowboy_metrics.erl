@@ -42,12 +42,7 @@ on_request(Req) ->
 %% collecting response metrices.
 -spec on_response(cowboy:http_status(), cowboy:http_headers(),
                   iodata(), cowboy_req:req()) -> cowboy_req:req().
-on_response(Status, Headers, _, Req) ->
-    Size = case lists:keyfind(<<"content-length">>, 1, Headers) of
-               false ->
-                   0;
-               {_, Value} ->
-                   list_to_integer(Value)
-           end,
+on_response(Status, _, Body, Req) ->
+    Size = byte_size(Body),
     gen_server:cast(cowboy_metrics_server, {response, Status, Size}),
     Req.

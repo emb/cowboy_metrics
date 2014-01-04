@@ -14,10 +14,9 @@
 %% tests
 -export([
          %% Generic request generator and counter.
-         http_counter_test/1,
-
-         %% SNMP specific tests.
-         snmp_total_after_kill/1
+         request_counter_test/1,
+         response_counter_test/1,
+         response_size_test/1
         ]).
 
 
@@ -37,7 +36,10 @@ all() ->
 
 groups() ->
     [
-     {snmp, [], [http_counter_test, snmp_total_after_kill]}
+     {snmp, [], [request_counter_test,
+                 response_counter_test,
+                 response_size_test
+                ]}
     ].
 
 
@@ -107,6 +109,8 @@ snmp_count_getter(total_requests) ->
     get_snmp_counter(?totalRequests_instance);
 snmp_count_getter(total_responses) ->
     get_snmp_counter(?totalResponses_instance);
+snmp_count_getter(total_response_size) ->
+    get_snmp_counter(?totalResponseSize_instance);
 snmp_count_getter({request, Method}) when is_atom(Method) ->
     snmp_count_getter({request, method(Method)});
 snmp_count_getter({request, Method}) ->
@@ -136,47 +140,85 @@ codes() ->
     ].
 
 
-http_counter_test(Config) ->
-    true = proper:quickcheck(prop_generate_requests(Config)),
-    %% quickcheck does a 100 by default.
-    Getter = ?config(count_getter, Config),
-    100 = Getter(total_requests),
-    100 = Getter(total_responses).
+request_counter_test(Config) ->
+    true = proper:quickcheck(prop_request_counter_test(Config)).
 
-
-prop_generate_requests(Config) ->
+prop_request_counter_test(Config) ->
     Getter = ?config(count_getter, Config),
-    ?FORALL({Method, Code},
-            {oneof(methods()), oneof(codes())},
+    ErrorWhenFail = "request counter did not increment"
+        "~n  Total Count,   old: ~p\tnew: ~p"
+        "~n  Method Count,  old: ~p\tnew: ~p~n",
+    ?FORALL(Method, oneof(methods()),
             begin
-                ReqCount = Getter({request, Method}),
-                {RespCount, _} = Getter({response, Code}),
-                Uri = uri(Config) ++ "?code=" ++ Code,
-                {ok, Code, _, _} = ibrowse:send_req(Uri, [], Method),
-                NewReqCount = Getter({request, Method}),
-                {NewRespCount, _} = Getter({response, Code}),
+                OldTotal = Getter(total_requests),
+                Old = Getter({request, Method}),
 
-                ErrorMessage = "**Counter Checks Failed **~n"
-                    "[Method]         ~p~n"
-                    "[Code]           ~p~n"
-                    "[Request Count]  before: ~p, after: ~p~n"
-                    "[Response Count] before: ~p, after: ~p~n",
-                Counters = [Method, Code, ReqCount, NewReqCount, RespCount,
-                            NewRespCount],
+                Uri = uri(Config),
+                {ok, _, _, _} = ibrowse:send_req(Uri, [], Method),
 
-                ?WHENFAIL(ct:pal(error, ErrorMessage, Counters),
-                          (NewReqCount =:= ReqCount + 1) andalso
-                          (NewRespCount =:= RespCount + 1))
+                NewTotal = Getter(total_requests),
+                New = Getter({request, Method}),
+
+                Counts = [OldTotal, NewTotal, Old, New],
+                ?WHENFAIL(ct:pal(error, ErrorWhenFail, Counts),
+                          New =:= Old + 1 andalso NewTotal =:= OldTotal + 1)
             end).
 
 
-snmp_total_after_kill(doc) ->
-    ["Ensure the total request counter are still valid afer gen_server kill"];
-snmp_total_after_kill(_Config) ->
-    %% Kill the gen_server this should erace its state along with the
-    %% total_request counter.
-    exit(whereis(cowboy_metrics_server), kill),
+response_counter_test(Config) ->
+    true = proper:quickcheck(prop_response_counter_test(Config)).
 
-    %% Now query SNMP which should return a total of 100 from the
-    %% previous test.
-    100 = snmp_count_getter(total_requests).
+
+prop_response_counter_test(Config) ->
+    Getter = ?config(count_getter, Config),
+    ErrorWhenFail = "response counter did not increment"
+        "~n  Total Count,      old: ~p\tnew: ~p"
+        "~n  Code Class Count, old: ~p\tnew: ~p~n",
+    ?FORALL({Method, Code}, {oneof(methods()), oneof(codes())},
+            begin
+                OldTotal = Getter(total_responses),
+                {Old, _} = Getter({response, Code}),
+
+                Uri = uri(Config) ++ "?code=" ++ Code,
+                {ok, Code, _, _} = ibrowse:send_req(Uri, [], Method),
+
+                NewTotal = Getter(total_responses),
+                {New, _} = Getter({response, Code}),
+
+                Counts = [OldTotal, NewTotal, Old, New],
+                ?WHENFAIL(ct:pal(error, ErrorWhenFail, Counts),
+                          New =:= Old + 1 andalso NewTotal =:= OldTotal + 1)
+            end).
+
+
+response_size_test(Config) ->
+    true = proper:quickcheck(prop_response_size_test(Config)).
+
+
+prop_response_size_test(Config) ->
+    Getter = ?config(count_getter, Config),
+    ErrorWhenFail = "response size did not increment"
+        "~n  Total Size,      old: ~p\tnew: ~p"
+        "~n  Code Class Size, old: ~p\tnew: ~p~n",
+    ?FORALL({Method, Code, Body},
+            {oneof([head, get, put, post]),
+             oneof(["200", "201"]),
+             oneof(["hello", "hello_world", "anotherstring"])},
+            begin
+                OldTotal = Getter(total_response_size),
+                {_, Old} = Getter({response, Code}),
+
+
+                Uri = uri(Config) ++ "?code=" ++ Code ++ "&body=" ++ Body,
+                {ok, Code, _, RetBody} =  ibrowse:send_req(Uri, [], Method),
+                Len = length(RetBody),
+
+                NewTotal = Getter(total_response_size),
+                {_, New} = Getter({response, Code}),
+
+                Count = [OldTotal, NewTotal, Old, New],
+                ?WHENFAIL(ct:pal(error, ErrorWhenFail, Count),
+                          New =:= Old + Len andalso NewTotal =:= OldTotal + Len)
+            end).
+
+
