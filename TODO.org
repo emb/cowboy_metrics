@@ -1,27 +1,28 @@
 * Getting shit done.
 
-Thank you for looking into this list.
-
 ** Definitions:
 
-*VERB*: GET, PUT, POST, DELETE, PATCH, OPTIONS
+*VERB*: HEAD, GET, PUT, POST, DELETE, PATCH, OPTIONS
 *STATUS*: Response status such as 404, 200, 501 etc.
 
 ** TODO define a high level metrics that neeed to be collected.
-*** TODO total requests per unit of time
-*** TODO total responses pre unit of time
-*** TODO number of VERB requests per unif of time
-*** TODO number of VERB responses per unit of time
+*** DONE total requests per unit of time
+*** DONE total responses pre unit of time
+*** DONE number of VERB requests per unif of time
+*** DONE number of VERB responses per unit of time
 *** TODO total bytes received per unit of time
-*** TODO total bytes sent pert unit of time
+*** DONE total bytes sent pert unit of time
 *** TODO number of bytes received per VERB per unit of time
-*** TODO number of bytes sent per VERB per unit of time
-*** TODO number of responses per STATUS per unit of time
+*** DONE number of bytes sent per VERB per unit of time
+*** DONE number of responses per STATUS per unit of time
 *** TODO number of active handlers
 
 
 ** TODO backend support
-*** TODO SNMPv2
-*** TODO SNMPv3
+*** DONE SNMP
 *** TODO folsom
 *** TODO PCP
+
+NOTE: In SNMP the per unit of time is extrapulated. The current MIB
+just defines the total count and wraps at 2^32. Its up to the conusmer
+to calculate the rate.
