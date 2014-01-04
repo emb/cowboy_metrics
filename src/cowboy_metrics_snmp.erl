@@ -115,6 +115,10 @@ total_response_size(_) ->
 
 %% Pass through operations unchanged. We are going to use the default
 %% agent storage options.
+table(new, DB) ->
+    Reply = snmp_generic:table_func(new, DB),
+    create_rows(DB),
+    Reply;
 table(Op, DB) ->
     snmp_generic:table_func(Op, DB).
 
@@ -128,8 +132,6 @@ table(Op, RowIndex, Cols, DB) ->
 init(_Opts) ->
     case load() of
         ok ->
-            create_rows(?REQ_DB, methods()),
-            create_rows(?RESP_DB, code_classes()),
             {ok, #state{}};
         {error,already_loaded} ->
             {ok, #state{}};
@@ -216,6 +218,12 @@ code_classes() ->
      {"3xx", 0, 0},
      {"4xx", 0, 0},
      {"5xx", 0, 0}].
+
+
+create_rows(DB = {requestTable, _}) ->
+    create_rows(DB, methods());
+create_rows(DB = {responseTable, _}) ->
+    create_rows(DB, code_classes()).
 
 
 create_rows(DB, [Row | Tail]) ->
