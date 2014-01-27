@@ -39,9 +39,6 @@
 -export([notify_requst/1]).
 -export([notify_response/2]).
 
-%% REMOVE ME
--export([table_fold/3, counter32_inc/1]).
-
 -define(SERVER, cowboy_metrics_server).
 
 -record(state, {
@@ -100,39 +97,4 @@ code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
 
-%% helpers
 
-counter32_inc(Value) ->
-    counter32_inc(Value, 1).
-
-counter32_inc(Value, By) ->
-    (Value + By) rem 4294967296.
-
-
-%% TODO: This function belongs in snmpa_generic moudle. Should submit
-%% patch? This is inspired by snmpa_generic:table_foreach.
--spec table_fold(tuple(),
-                 fun((OID::list(), Row::term(), AccIn) -> AccOut),
-                 AccIn) -> AccOut when AccOut::term(), AccIn::term().
-table_fold(Table, Fun, AccIn) ->
-    table_fold(Table, Fun, AccIn, undefined).
-
-table_fold(Table, Fun, AccIn, FOI) ->
-    table_fold(Table, Fun, AccIn, FOI, []).
-
-table_fold(Table, Fun, AccIn, FOI, OID) ->
-    case snmp_generic:table_next(Table, OID) of
-        endOfTable ->
-            AccIn;
-        OID ->
-            %% Not really next :-(
-            exit({cyclic_db_reference, OID});
-        NextOID ->
-            AccOut = case snmp_generic:table_get_row(Table, NextOID, FOI) of
-                         undefined ->
-                             AccIn;
-                         Row ->
-                             Fun(NextOID, Row, AccIn)
-                     end,
-            table_fold(Table, Fun, AccOut, FOI, NextOID)
-    end.

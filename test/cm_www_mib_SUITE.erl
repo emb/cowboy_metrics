@@ -15,9 +15,9 @@
 %% tests
 -export([
          create_svc_entry/1,
-         create_smry_entry/1,
          create_req_entry/1,
-         update_requests/1
+         update_requests/1,
+         get_reqs_summary_values/1
         ]).
 
 
@@ -40,8 +40,8 @@ all() ->
 groups() ->
     [
      {serviceTable, [], [create_svc_entry]},
-     {summaryTable, [], [create_smry_entry]},
-     {requestTable, [], [create_req_entry, update_requests]}
+     {requestTable, [], [create_req_entry, update_requests]},
+     {summaryTable, [], [get_reqs_summary_values]}
     ].
 
 
@@ -107,28 +107,6 @@ create_svc_entry(_Config) ->
     check_value(?wwwServiceType_wwwProxy, Type).
 
 
--define(summuryEntries(Key),
-       [
-        ?wwwSummaryEntry ++ [?wwwSummaryInRequests] ++ [Key],
-        ?wwwSummaryEntry ++ [?wwwSummaryOutRequests] ++ [Key],
-        ?wwwSummaryEntry ++ [?wwwSummaryInResponses] ++ [Key],
-        ?wwwSummaryEntry ++ [?wwwSummaryOutResponses] ++ [Key],
-        ?wwwSummaryEntry ++ [?wwwSummaryInBytes] ++ [Key],
-        ?wwwSummaryEntry ++ [?wwwSummaryInLowBytes] ++ [Key],
-        ?wwwSummaryEntry ++ [?wwwSummaryOutBytes] ++ [Key],
-        ?wwwSummaryEntry ++ [?wwwSummaryOutLowBytes] ++ [Key]
-       ]).
-
-create_smry_entry(_Config) ->
-    true = cm_www_mib:create_summary_entry(2),
-
-    {noError, 0, Variables} = ct_snmp:get_values(cowboy_mib_test,
-                                                 ?summuryEntries(2),
-                                                 snmp_mgr_agent),
-
-    lists:foreach(fun (Var) -> check_value(0, Var) end, Variables).
-
-
 -define(requestEntries(Index),
         [
          ?wwwRequestInEntry ++ [?wwwRequestInRequests | Index],
@@ -175,6 +153,55 @@ update_requests(Config) ->
     check_value(12, Bytes),
     check_value(snmp:universal_time_to_date_and_time(Time), DateAndTime).
 
+
+
+-define(summuryEntries(Key),
+       [
+        ?wwwSummaryEntry ++ [?wwwSummaryInRequests] ++ [Key],
+        ?wwwSummaryEntry ++ [?wwwSummaryOutRequests] ++ [Key],
+        ?wwwSummaryEntry ++ [?wwwSummaryInResponses] ++ [Key],
+        ?wwwSummaryEntry ++ [?wwwSummaryOutResponses] ++ [Key],
+        ?wwwSummaryEntry ++ [?wwwSummaryInBytes] ++ [Key],
+        ?wwwSummaryEntry ++ [?wwwSummaryInLowBytes] ++ [Key],
+        ?wwwSummaryEntry ++ [?wwwSummaryOutBytes] ++ [Key],
+        ?wwwSummaryEntry ++ [?wwwSummaryOutLowBytes] ++ [Key]
+       ]).
+
+get_reqs_summary_values(_Config) ->
+    Index = 4,
+    Reqs = [{'OPTIONS', 15}, {'OPTIONS', 10}
+           ,{'GET', 31},     {'GET', 0}
+           ,{'HEAD', 45},    {'HEAD', 0}
+           ,{'PUT', 89},     {'PUT', 1029}
+           ,{'POST', 12},    {'POST', 182}
+           ,{'PATCH', 10},   {'PATCH', 0}
+           ,{'DELETE', 79},  {'DELETE', 0}],
+    Time = calendar:universal_time(),
+    Req = #cm_req{timestamp = Time, svc_index = Index},
+
+    Methods = ['OPTIONS', 'GET', 'HEAD', 'PUT', 'POST', 'PATCH', 'DELETE'],
+
+    %% Create rows!
+    lists:foreach(fun (Method) ->
+                          true = cm_www_mib:create_req_entry(Index, Method)
+                  end, Methods),
+
+    %% Now create entries
+    lists:foreach(fun ({Type, Size}) ->
+                          true = cm_www_mib:request_in(Req#cm_req{type = Type,
+                                                                  size = Size})
+                  end, Reqs),
+
+    {noError, 0, Variables} = ct_snmp:get_values(cowboy_mib_test,
+                                                 ?summuryEntries(Index),
+                                                 snmp_mgr_agent),
+    [Count, _, _, _, Bytes, LowerBytes, _, _] = Variables,
+
+    %% Tests!
+    check_value(length(Reqs), Count),
+    Total = lists:foldl(fun ({_, S}, Acc) -> S + Acc end, 0, Reqs),
+    check_value(Total, Bytes),
+    check_value(Total, LowerBytes).
 
 
 check_value(Expect, #varbind{oid = OID, value = Value}) ->
