@@ -45,6 +45,7 @@
 -export([create_service_entry/1,
          create_req_entry/2]).
 -export([request_in/1]).
+-export([response_out/1]).
 
 %% SNMP Instrumentation functions
 -export([summary_table/1, summary_table/3]).
@@ -60,6 +61,7 @@
 %% these tables. Maybe this should be configurable in the future.
 -define(SVC_DB, {wwwServiceTable, volatile}).
 -define(REQ_DB, {wwwRequestInTable, volatile}).
+-define(RESP_DB, {wwwResponseOutTable, volatile}).
 
 %% @doc load mibs to the default master agent.
 -spec load() -> ok | {error, term()}.
@@ -111,6 +113,16 @@ create_req_entry(SvcIndex, Method) ->
     snmpa_mib_lib:table_cre_row(?REQ_DB, RowIndex, Row).
 
 
+create_resp_entry(SvcIndex, Code) ->
+    RowIndex = to_rowindex([SvcIndex, Code]),
+    Row = {RowIndex,
+           0,              %% OutResponses
+           0,              %% OutBytes
+           "00000000000"}, %% OutLastTime
+    snmpa_mib_lib:table_cre_row(?RESP_DB, RowIndex, Row).
+    
+
+
 -spec request_in(#cm_req{}) -> true | false.
 request_in(Req = #cm_req{svc_index = Idx, type = Method}) ->
     RowIndex = to_rowindex([Idx, Method]),
@@ -124,6 +136,29 @@ request_in(Req = #cm_req{svc_index = Idx, type = Method}) ->
 
     snmp_generic:table_set_elements(?REQ_DB, RowIndex, SetCols).
 
+
+-spec response_out(#cm_resp{}) -> true | false.
+response_out(Resp = #cm_resp{svc_index = Idx, code = Code}) ->
+    RowIndex = to_rowindex([Idx, Code]),
+
+    %% Create row if it doesn't exist.
+    case snmp_generic:table_row_exists(?RESP_DB, RowIndex) of
+        false ->
+            true = create_resp_entry(Idx, Code);
+        _ ->
+            ok
+    end,
+    
+    Cols = [?wwwResponseOutResponses, ?wwwResponseOutBytes],
+    
+    [Count, Size] = snmp_generic:table_get_elements(?RESP_DB, RowIndex, Cols),
+    
+    SetCols = [{?wwwResponseOutResponses, counter32_inc(Count)}
+              ,{?wwwResponseOutBytes, counter32_inc(Size, Resp#cm_resp.size)}
+              ,{?wwwResponseOutLastTime, to_datetime(Resp#cm_resp.timestamp)}],
+    
+    snmp_generic:table_set_elements(?RESP_DB, RowIndex, SetCols).
+            
 
 %% Instrumentation fuctions
 
@@ -212,6 +247,16 @@ get_summary([SvcIndex], ?wwwSummaryInBytes) ->
 
 get_summary([SvcIndex], ?wwwSummaryInLowBytes) ->
     Total = count_bytes(?REQ_DB, SvcIndex),
+    {value, lower_32(Total)};
+
+get_summary([SvcIndex], ?wwwSummaryOutResponses) ->
+    {value, count_requests(?RESP_DB, SvcIndex)};
+
+get_summary([SvcIndex], ?wwwSummaryOutBytes) ->
+    {value, count_bytes(?RESP_DB, SvcIndex)};
+
+get_summary([SvcIndex], ?wwwSummaryOutLowBytes) ->
+    Total = count_bytes(?RESP_DB, SvcIndex),
     {value, lower_32(Total)};
 
 get_summary(_RowIndex, _) ->

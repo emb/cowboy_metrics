@@ -17,7 +17,9 @@
          create_svc_entry/1,
          create_req_entry/1,
          update_requests/1,
-         get_reqs_summary_values/1
+         update_responses/1,
+         get_reqs_summary_values/1,
+         get_resps_summary_values/1
         ]).
 
 
@@ -33,7 +35,8 @@ all() ->
     [
      {group, serviceTable},
      {group, summaryTable},
-     {group, requestTable}
+     {group, requestTable},
+     {group, responseTable}
     ].
 
 
@@ -41,7 +44,8 @@ groups() ->
     [
      {serviceTable, [], [create_svc_entry]},
      {requestTable, [], [create_req_entry, update_requests]},
-     {summaryTable, [], [get_reqs_summary_values]}
+     {responseTable, [], [update_responses]},
+     {summaryTable, [], [get_reqs_summary_values, get_resps_summary_values]}
     ].
 
 
@@ -62,6 +66,23 @@ init_per_group(requestTable, Config) ->
     ,{method, 'OPTIONS'}
     ,{row_index, [2, 7, $O, $P, $T, $I, $O, $N, $S]}
      | Config];
+
+init_per_group(responseTable, Config) ->
+    [{svc_index, 3}
+    ,{code, 200}
+    ,{row_index, [3, 200]}
+     | Config];
+
+init_per_group(summaryTable, Config) ->
+    Index = 5,
+    true = cm_www_mib:create_service_entry(#cm_svc{
+                                              index = Index,
+                                              description = "summary table test",
+                                              contact = "cm_www_mib_SUITE",
+                                              name = "summary",
+                                              port = 8081
+                                             }),
+    [{index, Index} | Config];
 
 init_per_group(_, Config) ->
     Config.
@@ -154,6 +175,35 @@ update_requests(Config) ->
     check_value(snmp:universal_time_to_date_and_time(Time), DateAndTime).
 
 
+-define(responseEntries(Key),
+        [
+         ?wwwResponseOutEntry ++ [?wwwResponseOutResponses | Index],
+         ?wwwResponseOutEntry ++ [?wwwResponseOutBytes | Index],
+         ?wwwResponseOutEntry ++ [?wwwResponseOutLastTime | Index]
+        ]).
+
+update_responses(Config) ->
+    SvcIndex = ?config(svc_index, Config),
+    Code = ?config(code, Config),
+    Index = ?config(row_index, Config),
+    Time = calendar:universal_time(),
+
+    true = cm_www_mib:response_out(#cm_resp{
+                                      svc_index = SvcIndex,
+                                      size = 18,
+                                      code = Code,
+                                      timestamp = Time
+                                     }),
+    
+    {noError, 0, Variables} = ct_snmp:get_values(cowboy_mib_test,
+                                                 ?responseEntries(Index),
+                                                 snmp_mgr_agent),
+    [Resps, Bytes, DateAndTime] = Variables,
+
+    check_value(1, Resps),
+    check_value(18, Bytes),
+    check_value(snmp:universal_time_to_date_and_time(Time), DateAndTime).
+
 
 -define(summuryEntries(Key),
        [
@@ -167,8 +217,8 @@ update_requests(Config) ->
         ?wwwSummaryEntry ++ [?wwwSummaryOutLowBytes] ++ [Key]
        ]).
 
-get_reqs_summary_values(_Config) ->
-    Index = 4,
+get_reqs_summary_values(Config) ->
+    Index = ?config(index, Config),
     Reqs = [{'OPTIONS', 15}, {'OPTIONS', 10}
            ,{'GET', 31},     {'GET', 0}
            ,{'HEAD', 45},    {'HEAD', 0}
@@ -176,8 +226,6 @@ get_reqs_summary_values(_Config) ->
            ,{'POST', 12},    {'POST', 182}
            ,{'PATCH', 10},   {'PATCH', 0}
            ,{'DELETE', 79},  {'DELETE', 0}],
-    Time = calendar:universal_time(),
-    Req = #cm_req{timestamp = Time, svc_index = Index},
 
     Methods = ['OPTIONS', 'GET', 'HEAD', 'PUT', 'POST', 'PATCH', 'DELETE'],
 
@@ -188,8 +236,11 @@ get_reqs_summary_values(_Config) ->
 
     %% Now create entries
     lists:foreach(fun ({Type, Size}) ->
-                          true = cm_www_mib:request_in(Req#cm_req{type = Type,
-                                                                  size = Size})
+                          true = cm_www_mib:request_in(#cm_req{
+                                                          svc_index = Index,
+                                                          type = Type,
+                                                          size = Size
+                                                         })
                   end, Reqs),
 
     {noError, 0, Variables} = ct_snmp:get_values(cowboy_mib_test,
@@ -200,6 +251,32 @@ get_reqs_summary_values(_Config) ->
     %% Tests!
     check_value(length(Reqs), Count),
     Total = lists:foldl(fun ({_, S}, Acc) -> S + Acc end, 0, Reqs),
+    check_value(Total, Bytes),
+    check_value(Total, LowerBytes).
+
+
+get_resps_summary_values(Config) ->
+    Index = ?config(index, Config),
+    Resps = [{200, 10}, {200, 11}
+            ,{404, 10}
+            ,{503, 51}],
+
+    lists:foreach(fun ({Code, Size}) ->
+                          true = cm_www_mib:response_out(#cm_resp{
+                                                            svc_index = Index,
+                                                            code = Code,
+                                                            size = Size
+                                                           })
+                  end, Resps),
+    
+    {noError, 0, Variables} = ct_snmp:get_values(cowboy_mib_test,
+                                                 ?summuryEntries(Index),
+                                                 snmp_mgr_agent),
+    [_, _, _, Count, _, _, Bytes, LowerBytes] = Variables,
+
+    %% Tests!
+    check_value(length(Resps), Count),
+    Total = lists:foldl(fun ({_, S}, Acc) -> S + Acc end, 0, Resps),
     check_value(Total, Bytes),
     check_value(Total, LowerBytes).
 
