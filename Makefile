@@ -1,7 +1,7 @@
 PROJECT = cowboy_metrics
 
 CT_OPTS = -cover test/cover.spec -config test/snmp.config
-CT_SUITES = cm_www_mib
+CT_SUITES = cm_www_mib cm_eunit
 TEST_DEPS = cowboy ibrowse proper
 dep_cowboy = pkg://cowboy 0.9.0
 dep_ibrowse = https://github.com/cmullaparthi/ibrowse.git v4.0.2
