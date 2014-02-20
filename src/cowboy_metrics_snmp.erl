@@ -28,6 +28,7 @@
 -module(cowboy_metrics_snmp).
 -behaviour(gen_server).
 
+-include("cm_snmp.hrl").
 
 %% gen_server callbacks.
 -export([init/1, terminate/2]).
@@ -36,28 +37,15 @@
 
 %% API
 -export([start_link/0]).
--export([notify_requst/1]).
--export([notify_response/2]).
 
 -define(SERVER, cowboy_metrics_server).
-
--record(state, {
-         }).
+-define(METHODS, ['GET', 'HEAD', 'OPTIONS', 'PUT', 'POST', 'PATCH', 'DELETE']).
+-record(state, {}).
 
 
 -spec start_link() -> {ok, pid()} | ignore | {error, term()}.
 start_link() ->
     gen_server:start_link({local, ?SERVER}, ?MODULE, [], []).
-
-
--spec notify_requst(string() | binary()) -> ok.
-notify_requst(Method) ->
-    gen_server:cast(?SERVER, {request, Method}).
-
-
--spec notify_response(non_neg_integer() | binary(), non_neg_integer()) -> ok.
-notify_response(Code, Size) ->
-    gen_server:cast(?SERVER, {response, Code, Size}).
 
 
 %% gen_server callbacks
@@ -72,11 +60,32 @@ init(_Opts) ->
             {stop, Error}
     end.
 
+handle_call({init_svc, SvcIndex}, _From, State) ->
+    lists:foreach(fun (M) ->
+                          true = cm_www_mib:create_req_entry(SvcIndex, M)
+                  end, ?METHODS),
+    {reply, ok, State};
 
 handle_call(_Request, _From, State) ->
     error_logger:warning_msg("unknown request: ~p from: ~p", [_Request, _From]),
     {noreply, State}.
 
+
+handle_cast(M = {request, SvcIdx, Method, Size}, State) ->
+    Req = #cm_req{svc_index = SvcIdx, type = Method, size = Size},
+    case cm_www_mib:request_in(Req) of
+        true  -> ok;
+        false -> error_logger:warning_msg("failed snmp update: ~p", [M])
+    end,
+    {noreply, State};
+
+handle_cast(M = {response, SvcIdx, Status, Size}, State) ->
+    Resp = #cm_resp{svc_index = SvcIdx, code = Status, size = Size},
+    case cm_www_mib:response_out(Resp) of
+        true  -> ok;
+        false -> error_logger:warning_msg("failed snmp update: ~p", [M])
+    end,
+    {noreply, State};
 
 handle_cast(_Message, State) ->
     error_logger:warning_msg("unknown message: ~p", [_Message]),
