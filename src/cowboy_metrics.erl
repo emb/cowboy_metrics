@@ -27,22 +27,45 @@
 %% @doc Entry module to this application.
 -module(cowboy_metrics).
 
--export([on_request/1, on_response/4]).
+-include("cm_snmp.hrl").
 
-%% @doc Use this function as the `cowboy:onrequest_fun()'. It will be
-%% used collect metrics for all cowboy incoming requests.
--spec on_request(cowboy_req:req()) -> cowboy_req:req().
-on_request(Req) ->
+-export([create_server/1]).
+
+%% @doc Create a webserver metrics table. This function returns the
+%% appropriate `cowboy:onrequest_fun()' & `cowboy:onresponse_fun()'.
+-spec create_server(#cm_svc{}) ->
+                           {ok, cowboy:onrequest_fun(), cowboy:onresponse_fun()} |
+                           {error, term()}.
+create_server(Svc = #cm_svc{index = Idx}) ->
+    case cm_www_mib:create_service_entry(Svc) of
+        true ->
+            gen_server:call(cowboy_metrics_server, {init_svc, Idx}),
+            {ok
+            ,fun(Req) -> on_request(Idx, Req) end
+            ,fun(Status, Headers, Body, Req) ->
+                     on_response(Idx, Status, Headers, Body, Req)
+             end};
+        false ->
+            {error, bad_svc_record}
+    end.
+
+
+-spec on_request(non_neg_integer(), cowboy_req:req()) -> cowboy_req:req().
+on_request(SvcId, Req) ->
     {Method, Req1} = cowboy_req:method(Req),
-    gen_server:cast(cowboy_metrics_server, {request, Method}),
-    Req1.
+    Method1 = binary_to_existing_atom(Method, latin1),
+    {Size, Req3} = case cowboy_req:body_length(Req1) of
+                       {undefined, Req2} -> {0, Req2};
+                       {Length, Req2} -> {Length, Req2}
+                   end,
+    gen_server:cast(cowboy_metrics_server, {request, SvcId, Method1, Size}),
+    Req3.
 
 
-%% @doc Use this function as the `cowboy:onresponse_fun()'. Used for
-%% collecting response metrices.
--spec on_response(cowboy:http_status(), cowboy:http_headers(),
+-spec on_response(non_neg_integer(), cowboy:http_status(),
+                  cowboy:http_headers(),
                   iodata(), cowboy_req:req()) -> cowboy_req:req().
-on_response(Status, _, Body, Req) ->
+on_response(SvcId, Status, _, Body, Req) ->
     Size = byte_size(Body),
-    gen_server:cast(cowboy_metrics_server, {response, Status, Size}),
+    gen_server:cast(cowboy_metrics_server, {response, SvcId, Status, Size}),
     Req.
