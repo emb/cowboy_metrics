@@ -8,7 +8,7 @@
   {applications, [
                   kernel,
                   stdlib,
-		  snmp
+                  snmp
                  ]},
   {mod, { cowboy_metrics_app, []}},
   {env, []}
