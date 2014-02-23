@@ -228,7 +228,8 @@ CT_RUN = ct_run \
 CT_SUITES ?=
 
 define test_target
-test_$(1): ERLC_OPTS += -DTEST=1 +'{parse_transform, eunit_autoexport}'
+#test_$(1): ERLC_OPTS += -DTEST=1 +'{parse_transform, eunit_autoexport}'
+test_$(1): ERLC_OPTS += -DTEST=1
 test_$(1): clean deps app build-tests
 	@if [ -d "test" ] ; \
 	then \
@@ -240,7 +241,8 @@ endef
 
 $(foreach test,$(CT_SUITES),$(eval $(call test_target,$(test))))
 
-tests: ERLC_OPTS += -DTEST=1 +'{parse_transform, eunit_autoexport}'
+#tests: ERLC_OPTS += -DTEST=1 +'{parse_transform, eunit_autoexport}'
+tests: ERLC_OPTS += -DTEST=1
 tests: clean deps app build-tests
 	@if [ -d "test" ] ; \
 	then \
