@@ -15,6 +15,7 @@
 %% tests
 -export([
          create_svc_entry/1,
+         update_svc_port/1,
          create_req_entry/1,
          update_requests/1,
          update_responses/1,
@@ -42,7 +43,7 @@ all() ->
 
 groups() ->
     [
-     {serviceTable, [], [create_svc_entry]},
+     {serviceTable, [], [create_svc_entry, update_svc_port]},
      {requestTable, [], [create_req_entry, update_requests]},
      {responseTable, [], [update_responses]},
      {summaryTable, [], [get_reqs_summary_values, get_resps_summary_values]}
@@ -128,6 +129,20 @@ create_svc_entry(_Config) ->
     check_value(?wwwServiceType_wwwProxy, Type).
 
 
+update_svc_port(_Config) ->
+    Svc = #cm_svc{index = 6, port = 80},
+
+    true = cm_www_mib:create_service_entry(Svc),
+    true = cm_www_mib:update_service_port(6, 8080),
+
+    Entry = ?wwwServiceEntry ++ [?wwwServiceProtocol, 6],
+
+    {noError, 0, [Portocol]} = ct_snmp:get_values(cowboy_mib_test,
+                                                 [Entry], snmp_mgr_agent),
+
+    check_value(?applTCPProtoID ++ [8080], Portocol).
+
+
 -define(requestEntries(Index),
         [
          ?wwwRequestInEntry ++ [?wwwRequestInRequests | Index],
@@ -194,7 +209,7 @@ update_responses(Config) ->
                                       code = Code,
                                       timestamp = Time
                                      }),
-    
+
     {noError, 0, Variables} = ct_snmp:get_values(cowboy_mib_test,
                                                  ?responseEntries(Index),
                                                  snmp_mgr_agent),
@@ -268,7 +283,7 @@ get_resps_summary_values(Config) ->
                                                             size = Size
                                                            })
                   end, Resps),
-    
+
     {noError, 0, Variables} = ct_snmp:get_values(cowboy_mib_test,
                                                  ?summuryEntries(Index),
                                                  snmp_mgr_agent),

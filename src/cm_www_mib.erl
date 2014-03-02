@@ -43,6 +43,7 @@
 -export([unload/0, unload/1]).
 
 -export([create_service_entry/1,
+         update_service_port/2,
          create_req_entry/2]).
 -export([request_in/1]).
 -export([response_out/1]).
@@ -100,6 +101,13 @@ create_service_entry(Svc = #cm_svc{index = Index}) ->
            "00000000000"  %% FIXME: LastChange (unknown)
           },
     snmpa_mib_lib:table_cre_row(?SVC_DB, [Index], Row).
+
+
+-spec update_service_port(non_neg_integer(), non_neg_integer()) ->
+                                true | false | {error, term()}.
+update_service_port(Index, Port) ->
+    snmp_generic:table_set_element(?SVC_DB, [Index], ?wwwServiceProtocol,
+                                   ?applTCPProtoID ++ [Port]).
 
 
 -spec create_req_entry(non_neg_integer(), request_type()) ->
