@@ -29,17 +29,46 @@
 
 -include("cm_snmp.hrl").
 
+-export([start_http/4, start_http/5]).
 -export([create_server/1]).
+
+
+%% @doc Start a cowboy http listerner
+-spec start_http(ranch:ref(), non_neg_integer(), ranch_tcp:opts(),
+                 cowboy_protocol:opts()) -> {ok, pid()} | {error, any()}.
+start_http(Ref, Acceptors, TransOpts, PorotoOpts) ->
+    start_http(1, Ref, Acceptors, TransOpts, PorotoOpts).
+
+
+-spec start_http(pos_integer(), ranch:ref(), non_neg_integer(),
+                 ranch_tcp:opts(), cowboy_protocol:opts())
+                -> {ok, pid()} | {error, any()}.
+start_http(Index, Ref, Acceptors, TransOpts, ProtoOpts) ->
+    Svc = #cm_svc{index   = Index
+                 ,name    = ref_string(Ref)
+                 ,description = "COWBOY Web Server"},
+    {ok, ReqFun, RespFun} = create_server(Svc),
+    HooksOpts = update_hooks(ProtoOpts, ReqFun, RespFun),
+    case cowboy:start_http(Ref, Acceptors, TransOpts, HooksOpts) of
+        {ok, _} = Ok ->
+            Port = ranch:get_port(Ref),
+            true = cm_www_mib:update_service_port(Index, Port),
+            Ok;
+        Other ->
+            Other
+    end.
+
 
 %% @doc Create a webserver metrics table. This function returns the
 %% appropriate `cowboy:onrequest_fun()' & `cowboy:onresponse_fun()'.
 -spec create_server(#cm_svc{}) ->
-                           {ok, cowboy:onrequest_fun(), cowboy:onresponse_fun()} |
+                           {ok, cowboy:onrequest_fun(),
+                                cowboy:onresponse_fun()} |
                            {error, term()}.
 create_server(Svc = #cm_svc{index = Idx}) ->
     case cm_www_mib:create_service_entry(Svc) of
         true ->
-            gen_server:call(cowboy_metrics_server, {init_svc, Idx}),
+            ok = gen_server:call(cowboy_metrics_server, {init_svc, Idx}),
             {ok
             ,fun(Req) -> on_request(Idx, Req) end
             ,fun(Status, Headers, Body, Req) ->
@@ -69,3 +98,74 @@ on_response(SvcId, Status, _, Body, Req) ->
     Size = byte_size(Body),
     gen_server:cast(cowboy_metrics_server, {response, SvcId, Status, Size}),
     Req.
+
+
+
+ref_string(Ref) when is_binary(Ref) ->
+    binary_to_list(Ref);
+ref_string(Ref) when is_atom(Ref) ->
+    atom_to_list(Ref);
+ref_string(Ref) when is_list(Ref) ->
+    Ref.
+
+
+update_hooks(Opts, ReqFun, RespFun) ->
+    update_resp_hook(update_req_hook(Opts, ReqFun), RespFun).
+
+
+update_req_hook(Opts, ReqFun) ->
+    case lists:keytake(onrequest, 1, Opts) of
+        {value, {onrequest, Fun}, Opts1} ->
+            [{onrequest, fun (Req) -> ReqFun(Fun(Req)) end} | Opts1];
+        false ->
+            [{onrequest, ReqFun} | Opts]
+    end.
+
+
+update_resp_hook(Opts, RespFun) ->
+    case lists:keytake(onresponse, 1, Opts) of
+        {value, {onresponse, Fun}, Opts1} ->
+            [{onresponse, fun (S, H, B, Req) ->
+                                  RespFun(S, H, B, Fun(S, H, B, Req))
+                          end} | Opts1];
+        false ->
+            [{onresponse, RespFun} | Opts]
+    end.
+
+
+-ifdef(TEST).
+-include_lib("eunit/include/eunit.hrl").
+
+update_hooks_single_test_() ->
+    ReqFun = fun(_) -> req_fun end,
+    RespFun = fun (_, _, _, _) -> resp_fun end,
+
+    Updated = update_hooks([{some, opt}], ReqFun, RespFun),
+    {onrequest, NewReqFun} = lists:keyfind(onrequest, 1, Updated),
+    {onresponse, NewRespFun} = lists:keyfind(onresponse, 1, Updated),
+    [
+     ?_assertEqual(3, length(Updated)),
+     ?_assertMatch(req_fun, NewReqFun(foo)),
+     ?_assertMatch(resp_fun, NewRespFun(a, b, c, d))
+    ].
+
+
+update_hooks_test_() ->
+    ReqFun = fun(X) -> X + 1 end,
+    RespFun = fun(A, B, C, D) -> lists:sum([A, B, C, D]) end,
+    
+    Opts = [{some, opt}, {onrequest, ReqFun}, {onresponse, RespFun}],
+    Updated = update_hooks(Opts, ReqFun, RespFun),
+    ?debugVal(Updated),
+    {onrequest, NewReqFun} = lists:keyfind(onrequest, 1, Updated),
+    {onresponse, NewRespFun} = lists:keyfind(onresponse, 1, Updated),
+    ?debugVal(NewReqFun),
+    [
+     ?_assertEqual(3, length(Updated)),
+     ?_assertEqual(2, ReqFun(ReqFun(0))),
+     ?_assertEqual(7, RespFun(1, 1, 1, RespFun(1, 1, 1, 1))),
+     ?_assertEqual(2, NewReqFun(0)),
+     ?_assertEqual(7, NewRespFun(1,1,1,1))
+    ].
+
+-endif.

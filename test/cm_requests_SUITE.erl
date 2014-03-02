@@ -3,18 +3,21 @@
 
 -include("../include/cm_snmp.hrl").
 -include("../include/WWW-MIB.hrl").
+-include_lib("../include/NETWORK-SERVICES-MIB.hrl").
 
 -include_lib("common_test/include/ct.hrl").
 -include_lib("snmp/include/snmp_types.hrl").
 
 
 %% ct callbacks.
--export([suite/0, all/0]).
+-export([suite/0, all/0, groups/0]).
 -export([init_per_suite/1, end_per_suite/1]).
+-export([init_per_group/2, end_per_group/2]).
 
 %% Tests
 -export([
-         req_svcs_dont_interfere/1
+         req_svcs_dont_interfere/1,
+         start_http/1
         ]).
 
 
@@ -28,18 +31,25 @@ suite() ->
 
 all() ->
     [
-     req_svcs_dont_interfere
+     {group, two_cowboys},
+     {group, start_tests}
+    ].
+
+
+groups() ->
+    [
+     {two_cowboys, [], [req_svcs_dont_interfere]},
+     {start_tests, [], [start_http]}
     ].
 
 
 init_per_suite(Config) ->
     ok = ct_snmp:start(Config, snmp_mgr_agent, snmp_app),
+    {ok, _} = application:ensure_all_started(cowboy),
     {ok, _} = application:ensure_all_started(cowboy_metrics),
-    {ok, Config1} = start_cowboy(idx(dee), dee, Config),
-    {ok, Config2} = start_cowboy(idx(dum), dum, Config1),
     ok = application:ensure_started(ibrowse),
 
-    Config2.
+    Config.
 
 
 end_per_suite(Config) ->
@@ -47,6 +57,27 @@ end_per_suite(Config) ->
     application:stop(cowboy_metrics),
     application:stop(cowboy),
     ct_snmp:stop(Config),
+    Config.
+
+
+init_per_group(two_cowboys, Config) ->
+    {ok, Config1} = start_cowboy(idx(dee), dee, Config),
+    {ok, Config2} = start_cowboy(idx(dum), dum, Config1),
+    Config2;
+
+init_per_group(start_tests, Config) ->
+    Dispatch = cowboy_router:compile([{'_', [
+                                             {"/", test_handler, []}
+                                            ]}
+                                     ]),
+    Name = start_tests_cowboy,
+    Index = 2,
+    {ok, _} = cowboy_metrics:start_http(Index, Name, 100, [{port, 0}],
+                                        [{env, [{dispatch, Dispatch}]}]),
+    [{name, Name}, {index, Index} | Config].
+
+
+end_per_group(_, Config) ->
     Config.
 
 
@@ -71,10 +102,16 @@ req_svcs_dont_interfere(Config) ->
     1 = resps(dum, 404).
 
 
+start_http(Config) ->
+    Port = ranch:get_port(?config(name, Config)),
+    OID = ?wwwServiceEntry ++ [?wwwServiceProtocol, ?config(index, Config)],
+    SnmpPort = snmp_value(OID),
+    
+    SnmpPort = ?applTCPProtoID ++ [Port].
+
 
 %% Helpers
 start_cowboy(Idx, Name, Config) ->
-    {ok, _} = application:ensure_all_started(cowboy),
     Dispatch = cowboy_router:compile([{'_', [
                                              {"/", test_handler, []}
                                             ]}
