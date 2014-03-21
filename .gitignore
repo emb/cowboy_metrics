@@ -21,3 +21,6 @@ doc/*.html
 doc/*.css
 doc/*.png
 doc/edoc-info
+
+# Dialyzer plt file
+.cowboy_metrics.plt
