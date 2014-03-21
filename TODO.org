@@ -10,9 +10,9 @@
 *** DONE total responses pre unit of time
 *** DONE number of VERB requests per unif of time
 *** DONE number of VERB responses per unit of time
-*** TODO total bytes received per unit of time
+*** DONE total bytes received per unit of time
 *** DONE total bytes sent pert unit of time
-*** TODO number of bytes received per VERB per unit of time
+*** DONE number of bytes received per VERB per unit of time
 *** DONE number of bytes sent per VERB per unit of time
 *** DONE number of responses per STATUS per unit of time
 *** TODO number of active handlers
