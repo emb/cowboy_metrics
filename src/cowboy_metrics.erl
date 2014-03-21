@@ -24,7 +24,10 @@
 %% (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 %% OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-%% @doc Entry module to this application.
+%% @doc Application Entry Point.
+%% Allow cowboy web servers to start gathering SNMP metrics. This
+%% module provide mechanism to either generate appropriate
+%% `cowboy:onrequest_fun/1' and `cowboy:onrequest_fun/4'.
 -module(cowboy_metrics).
 
 -include("cm_snmp.hrl").
@@ -33,13 +36,22 @@
 -export([create_server/1]).
 
 
-%% @doc Start a cowboy http listerner
+%% @doc Start a cowboy http listener. This is an identical function to
+%% `cowboy:start_http/4'. It is also is an equivalent to
+%% `start_http(1, Ref, Acceptors, TransOpts, ProtoOpts)'. It starts
+%% the metrics with a service of index equals to 1.
+%% @see //cowboy/cowboy:start_http/4
+%% @see //cowboy_metrics/cowboy_metrics:start_http/5
 -spec start_http(ranch:ref(), non_neg_integer(), ranch_tcp:opts(),
                  cowboy_protocol:opts()) -> {ok, pid()} | {error, any()}.
 start_http(Ref, Acceptors, TransOpts, PorotoOpts) ->
     start_http(1, Ref, Acceptors, TransOpts, PorotoOpts).
 
 
+%% @doc A helper function that will create a cowboy server with some
+%% SNMP service information. It will also set the appropriate
+%% onrequest and onresponse cowboy hooks. This function will detect
+%% existing cowboy hooks and will compose them with the SNMP hooks.
 -spec start_http(pos_integer(), ranch:ref(), non_neg_integer(),
                  ranch_tcp:opts(), cowboy_protocol:opts())
                 -> {ok, pid()} | {error, any()}.
@@ -59,8 +71,9 @@ start_http(Index, Ref, Acceptors, TransOpts, ProtoOpts) ->
     end.
 
 
-%% @doc Create a webserver metrics table. This function returns the
-%% appropriate `cowboy:onrequest_fun()' & `cowboy:onresponse_fun()'.
+%% @doc Create a service entry in the SNMP service information
+%% table. This function returns the appropriate
+%% `cowboy:onrequest_fun/1' and `cowboy:onresponse_fun/4'.
 -spec create_server(#cm_svc{}) ->
                            {ok, cowboy:onrequest_fun(),
                                 cowboy:onresponse_fun()} |

@@ -15,3 +15,9 @@ deps/
 
 # erlang.mk package file
 .erlang.mk.packages.v1
+
+# Docs
+doc/*.html
+doc/*.css
+doc/*.png
+doc/edoc-info
