@@ -6,10 +6,12 @@ TEST_DEPS = cowboy ibrowse
 dep_cowboy = pkg://cowboy 0.9.0
 dep_ibrowse = https://github.com/cmullaparthi/ibrowse.git v4.0.2
 
-
-## Override the default target
-
-default: mibs all
+# Default target compile mibs before anything else.
+all: mibs
+# This to ensure `make tests` compiles the mibs.
+deps: mibs
+# also clean-mibs
+clean-all: clean-mibs
 
 ## Include standard targets
 

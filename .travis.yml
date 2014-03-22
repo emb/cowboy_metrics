@@ -4,4 +4,4 @@ notifications:
     - ed.barwani@gmail.com
 otp_release:
   - R16B
-script: "make mibs tests"
+script: "make V=1 tests"
