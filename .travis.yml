@@ -3,5 +3,5 @@ notifications:
   email:
     - ed.barwani@gmail.com
 otp_release:
-  - R16B
-script: "make tests"
+  - R16B03-1
+script: "make V=1 tests"
