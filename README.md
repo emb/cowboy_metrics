@@ -1,3 +1,4 @@
+[![Build Status](https://travis-ci.org/emb/cowboy_metrics.svg?branch=release/v0.1.0)](https://travis-ci.org/emb/cowboy_metrics)
 # README
 
 In long running cowboy application, sometimes log files are not enough
