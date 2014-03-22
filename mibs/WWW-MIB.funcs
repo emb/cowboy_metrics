@@ -1,0 +1,6 @@
+%% -*- mode: erlang -*-
+
+%% Use the default snmp generic implementation for now.
+{wwwServiceTable, {snmp_generic, table_func, [{wwwServiceTable, volatile}]}}.
+{wwwSummaryTable, {cm_www_mib, summary_table, []}}.
+{wwwRequestInTable, {snmp_generic, table_func, [{wwwRequestInTable, volatile}]}}.

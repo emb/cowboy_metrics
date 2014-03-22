@@ -1,0 +1,24 @@
+@author Ed M. Barwani <ed.barwani@gmail.com>
+@copyright 2014 Ed M. Barwani
+@version 0.1.0
+@title Cowboy Metrics
+@doc
+
+== Purpose ==
+Collect metrics of a cowboy web server.
+
+== Metrics ==
+
+This application the native erlang snmp application [http://www.erlang.org/doc/man/snmp.html] to collect incoming and outgoing requests.
+
+=== WWW-MIB RFC-2594 ===
+
+Supported statistics.
+
+<ol>
+  <li>Service information</li>
+  <li>Summary Table</li>
+  <li>Request In Table</li>
+  <li>Response Out Table</li>
+</ol>
+@end

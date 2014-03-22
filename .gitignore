@@ -1,0 +1,26 @@
+# Erlang generated files
+*.beam
+ebin/
+*_crash.dump
+
+# Compiled MIBs
+priv/mibs/*.bin
+include/*-MIB.hrl
+
+# Logs
+logs/
+
+# Deps
+deps/
+
+# erlang.mk package file
+.erlang.mk.packages.v1
+
+# Docs
+doc/*.html
+doc/*.css
+doc/*.png
+doc/edoc-info
+
+# Dialyzer plt file
+.cowboy_metrics.plt
