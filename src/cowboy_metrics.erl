@@ -108,7 +108,7 @@ on_request(SvcId, Req) ->
                   cowboy:http_headers(),
                   iodata(), cowboy_req:req()) -> cowboy_req:req().
 on_response(SvcId, Status, _, Body, Req) ->
-    Size = byte_size(Body),
+    Size = iolist_size(Body),
     gen_server:cast(cowboy_metrics_server, {response, SvcId, Status, Size}),
     Req.
 
