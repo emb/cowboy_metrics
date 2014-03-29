@@ -16,30 +16,33 @@
 
 %% Tests
 -export([
-         req_svcs_dont_interfere/1,
-         start_http/1
+         req_svcs_dont_interfere/1
+        ,start_http/1
+        ,'cowboy_metrics#3_response_size_calculation'/1
         ]).
 
 
 suite() ->
     %% SNMP Config
     [
-     {require, snmp_mgr_agent, snmp},
-     {require, snmp_app, snmp_app}
+     {require, snmp_mgr_agent, snmp}
+    ,{require, snmp_app, snmp_app}
     ].
 
 
 all() ->
     [
-     {group, two_cowboys},
-     {group, start_tests}
+     {group, two_cowboys}
+    ,{group, start_tests}
+    ,{group, hooks}
     ].
 
 
 groups() ->
     [
-     {two_cowboys, [], [req_svcs_dont_interfere]},
-     {start_tests, [], [start_http]}
+     {two_cowboys, [], [req_svcs_dont_interfere]}
+    ,{start_tests, [], [start_http]}
+    ,{hooks, [], ['cowboy_metrics#3_response_size_calculation']}
     ].
 
 
@@ -74,8 +77,31 @@ init_per_group(start_tests, Config) ->
     Index = 2,
     {ok, _} = cowboy_metrics:start_http(Index, Name, 100, [{port, 0}],
                                         [{env, [{dispatch, Dispatch}]}]),
-    [{name, Name}, {index, Index} | Config].
+    [{name, Name}, {index, Index} | Config];
 
+init_per_group(hooks, Config) ->
+    Dispatch = cowboy_router:compile([{'_',
+                                       [
+                                        {"/", test_response_type_handler, []}
+                                       ]}
+                                     ]),
+    Name = hooks,
+    {ok, _} = cowboy_metrics:start_http(3, Name, 100, [{port, 0}],
+                                        [{env, [{dispatch, Dispatch}]}]),
+    Port = ranch:get_port(Name),
+    [{name, Name}, {port, Port} | Config].
+
+
+end_per_group(two_cowboys, Config) ->
+    cowboy:stop_listener(dee),
+    cowboy:stop_listener(dum),
+    Config;
+
+end_per_group(Group, Config)
+  when Group == start_tests orelse
+       Group == hooks ->
+    cowboy:stop_listener(?config(name, Config)),
+    Config;
 
 end_per_group(_, Config) ->
     Config.
@@ -106,8 +132,21 @@ start_http(Config) ->
     Port = ranch:get_port(?config(name, Config)),
     OID = ?wwwServiceEntry ++ [?wwwServiceProtocol, ?config(index, Config)],
     SnmpPort = snmp_value(OID),
-    
+
     SnmpPort = ?applTCPProtoID ++ [Port].
+
+
+'cowboy_metrics#3_response_size_calculation'(doc) ->
+    ["Ensure that our onresponse hook doesn't crash."];
+
+'cowboy_metrics#3_response_size_calculation'(Config) ->
+    %% Ensure binary body does not crash cowboy server.
+    {ok, "200", _, _} = http_get([{"Accept", "text/binary+plain"}], Config),
+    %% iolist?
+    {ok, "200", _, _} = http_get([{"Accept", "text/iolist+plain"}], Config),
+    %% Other than iodata means that cowboy itself will crash, not the
+    %% fault of our snmp on response hook.
+    {error, retry_later} = http_get([{"Accept", "text/other+plain"}], Config).
 
 
 %% Helpers
@@ -130,9 +169,18 @@ start_cowboy(Idx, Name, Config) ->
     {ok, [{{Name, port}, Port} | Config]}.
 
 
+uri(Config) ->
+    Port = ?config(port, Config),
+    lists:flatten(io_lib:format("http://localhost:~p/", [Port])).
+
+
 uri(Name, Config) ->
     Port = ?config({Name, port}, Config),
-    lists:flatten(io_lib:format("http://localhost:~p/", [Port])).
+    uri([{port, Port}]).
+
+
+http_get(Headers, Config) ->
+    ibrowse:send_req(uri(Config), Headers, get).
 
 
 send(Name, Method, Code, Config) when is_integer(Code) ->
@@ -168,17 +216,3 @@ snmp_value(OID) ->
                                              snmp_mgr_agent),
     #varbind{oid = OID, value = Value} = Var,
     Value.
-
-
-
-
-
-
-
-
-
-
-
-
-
-
