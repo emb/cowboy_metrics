@@ -2,7 +2,7 @@
 {application, cowboy_metrics,
  [
   {description, "Provide mechansim to collect cowboy metrics"},
-  {vsn, "0.1.2"},
+  {vsn, "0.1.3"},
   {registered, []},
   {modules, []},
   {applications, [
