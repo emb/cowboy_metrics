@@ -79,6 +79,10 @@ handle_cast(M = {request, SvcIdx, Method, Size}, State) ->
     end,
     {noreply, State};
 
+handle_cast({response, SvcIdx, Status, Size}, State) when is_binary(Status)->
+    <<BinStatus:3/binary, $ , _/binary>> = Status,
+    handle_cast({response, SvcIdx, binary_to_integer(BinStatus), Size}, State);
+
 handle_cast(M = {response, SvcIdx, Status, Size}, State) ->
     Resp = #cm_resp{svc_index = SvcIdx, code = Status, size = Size},
     case cm_www_mib:response_out(Resp) of
